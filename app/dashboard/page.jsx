@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   BarChart2, FileText, MessageSquare, TrendingUp,
@@ -26,11 +26,13 @@ export default function DashboardPage() {
   const firstName = user?.full_name?.split(" ")[0] ?? "there";
   const [stats, setStats] = useState(null);
   const [surveys, setSurveys] = useState([]);
-  const [trendData, setTrendData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [liveTime, setLiveTime] = useState("");
+  const [connected, setConnected] = useState(false);
+
+  const ctrlRef = useRef(null);
 
   // Live ticking clock
   useEffect(() => {
@@ -47,28 +49,36 @@ export default function DashboardPage() {
   const load = useCallback(async (silent = false) => {
     if (!silent) setRefreshing(true);
     try {
-      const [s, sv] = await Promise.all([analyticsApi.dashboard(), surveysApi.list()]);
-      setStats(s);
+      const sv = await surveysApi.list();
       setSurveys(sv);
-      const top = sv.find((x) => x.response_count > 0);
-      if (top) {
-        const a = await analyticsApi.survey(top.id);
-        setTrendData(a);
-      }
-      setLastUpdated(new Date());
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (!silent) setRefreshing(false);
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  // Connect to live stream
+  const connectStream = useCallback(() => {
+    if (ctrlRef.current) ctrlRef.current.abort();
+    setConnected(false);
+    ctrlRef.current = analyticsApi.openDashboardStream(
+      (data) => {
+        setStats(data);
+        setConnected(true);
+        setLastUpdated(new Date());
+        setLoading(false);
+      },
+      (err) => {
+        setConnected(false);
+        setTimeout(connectStream, 5000);
+      }
+    );
+  }, []);
 
-  // Real-time auto-refresh every 30 s
-  useEffect(() => {
-    const id = setInterval(() => load(true), 30000);
-    return () => clearInterval(id);
-  }, [load]);
+  useEffect(() => { 
+    load();
+    connectStream();
+    return () => { if (ctrlRef.current) ctrlRef.current.abort(); };
+  }, [load, connectStream]);
 
   const hour = new Date().getHours();
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
@@ -98,7 +108,6 @@ export default function DashboardPage() {
 
   // Real-time Engagement Calculations
   const publishRate = totalSurveys > 0 ? Math.round((publishedSurveys / totalSurveys) * 100) : 0;
-  const responseVelocity = responsesThisWeek > 0 ? Math.round((responsesToday / responsesThisWeek) * 100) : 0;
   const averageResponses = totalSurveys > 0 ? (totalResponses / totalSurveys).toFixed(1) : 0;
   const weekGrowth = responsesThisWeek > 0 ? "+" + responsesThisWeek : "0";
 
@@ -146,14 +155,14 @@ export default function DashboardPage() {
         <FadeIn className={styles.header}>
           <div>
             <div className={styles.headerMeta}>
-              <span className={styles.liveChip}>
-                <span className={styles.liveDot} />
-                Live
+              <span className={styles.liveChip} style={{ background: connected ? "rgba(16, 185, 129, 0.1)" : "rgba(239, 68, 68, 0.1)", color: connected ? "#059669" : "#dc2626" }}>
+                <span className={styles.liveDot} style={{ background: connected ? "#10b981" : "#ef4444", animation: connected ? 'pulse 1.5s infinite' : 'none' }} />
+                {connected ? "Sync Live" : "Reconnecting"}
               </span>
               <span className={styles.clock}>{liveTime}</span>
               {lastUpdated && (
                 <span className={styles.lastUpdated}>
-                  Updated {lastUpdated.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })}
+                  Updated {lastUpdated.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}
                 </span>
               )}
             </div>
@@ -163,7 +172,7 @@ export default function DashboardPage() {
             </p>
           </div>
           <div className={styles.headerActions}>
-            <button onClick={() => load()} disabled={refreshing} className={styles.refreshBtn}>
+            <button onClick={() => { load(); connectStream(); }} disabled={refreshing} className={styles.refreshBtn}>
               <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`} />
               {refreshing ? "Refreshing…" : "Refresh"}
             </button>
@@ -176,15 +185,15 @@ export default function DashboardPage() {
           </div>
         </FadeIn>
 
-        {/* ── Welcome banner (only if no surveys yet) ── */}
-        {(!stats || totalSurveys === 0) && (
+        {/* ── Welcome banner ── */}
+        {totalSurveys === 0 && (
           <Reveal className="mb-6">
             <div className={styles.welcomeBanner}>
               <div className={styles.bannerIconWrap}><Lightbulb size={20} /></div>
               <div>
                 <p className={styles.bannerTitle}>Welcome! Let&apos;s create your first survey 🚀</p>
                 <p className={styles.bannerDesc}>
-                  A survey is simply a list of questions you send to your customers or team. Once they answer, you&apos;ll see everything here — automatically!
+                  A survey is simply a list of questions you send to your customers. Once they answer, you&apos;ll see everything here — live!
                 </p>
                 <Link href="/surveys/new">
                   <button className={styles.bannerBtn}>
@@ -236,31 +245,23 @@ export default function DashboardPage() {
           </Reveal>
         )}
 
-        {/* ── Trend chart + Pie ── */}
+        {/* ── Trend chart + Live Activity ── */}
         <div className="mb-6 grid grid-cols-1 gap-5 lg:grid-cols-3">
           <Reveal className="lg:col-span-2">
             <div className={styles.panel}>
               <div className={styles.panelHead}>
                 <div>
-                  <span className={styles.panelTitle}>Response Trend</span>
-                  <p className={styles.panelSub}>Daily responses over the last 14 days</p>
+                  <span className={styles.panelTitle}>Platform Traffic Volume</span>
+                  <p className={styles.panelSub}>Live responses over the last 14 days</p>
                 </div>
-                {trendData && (
-                  <span className={styles.surveyTag}>
-                    <Eye size={10} /> {trendData.survey_title}
-                  </span>
-                )}
               </div>
               <div className={styles.panelBody}>
-                {trendData ? (
-                  <TrendChart data={trendData.completion_trend} surveyTitle={trendData.survey_title} />
+                {stats?.completion_trend && stats.completion_trend.length > 0 ? (
+                  <TrendChart data={stats.completion_trend} surveyTitle="All Surveys" />
                 ) : (
                   <div className={styles.empty}>
                     <BarChart2 size={36} className="text-slate-200 mb-1" />
                     <p className="font-medium text-slate-500 text-sm">No data yet</p>
-                    <p className="text-xs text-slate-400 text-center max-w-[200px]">
-                      Once someone submits a response, your trend chart will appear here.
-                    </p>
                   </div>
                 )}
               </div>
@@ -268,59 +269,40 @@ export default function DashboardPage() {
           </Reveal>
 
           <Reveal delay={80}>
-            <div className={styles.panel}>
-              <div className={styles.panelHead}>
-                <div>
-                  <span className={styles.panelTitle}>Survey Status</span>
-                  <p className={styles.panelSub}>Live vs Draft breakdown</p>
-                </div>
-              </div>
-              <div className={styles.panelBody}>
-                {stats && stats.total_surveys > 0 ? (
-                  <>
-                    <ResponsiveContainer width="100%" height={150}>
-                      <PieChart>
-                        <Pie
-                          data={pieData}
-                          cx="50%" cy="50%"
-                          innerRadius={44} outerRadius={64}
-                          paddingAngle={3} dataKey="value"
-                          strokeWidth={0}
-                        >
-                          {pieData.map((e, i) => <Cell key={i} fill={e.color} />)}
-                        </Pie>
-                        <ReTooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div className="flex flex-col gap-2.5 mt-2">
-                      {pieData.map((d) => (
-                        <div key={d.name} className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className={styles.dot} style={{ background: d.color }} />
-                            <span className="text-[12px] text-slate-600">{d.name}</span>
-                          </div>
-                          <span className="text-[13px] font-bold text-slate-800">{d.value}</span>
-                        </div>
-                      ))}
-                      <div className="border-t border-slate-100 pt-2 flex justify-between">
-                        <span className="text-[11px] text-slate-400">Total surveys</span>
-                        <span className="text-[13px] font-bold text-slate-800">{stats.total_surveys}</span>
-                      </div>
+             <div className={styles.panel}>
+               <div className={styles.panelHead}>
+                 <div>
+                   <span className={styles.panelTitle}>Live Feed</span>
+                   <p className={styles.panelSub}>Real-time tracking of new responses</p>
+                 </div>
+               </div>
+               <div className={styles.panelBody} style={{ padding: '0px' }}>
+                 {(stats?.recent_activity?.length ?? 0) === 0 ? (
+                    <div className={styles.empty} style={{ padding: '36px 20px' }}>
+                      <Activity size={32} className="text-slate-200 mb-1" />
+                      <p className="font-medium text-slate-500 text-[13px]">Awaiting telemetry...</p>
                     </div>
-                  </>
-                ) : (
-                  <div className={styles.empty}>
-                    <Users size={32} className="text-slate-200 mb-1" />
-                    <p className="font-medium text-slate-500 text-sm">No surveys yet</p>
-                    <p className="text-xs text-slate-400 text-center">Create a survey to see results here.</p>
-                  </div>
-                )}
-              </div>
+                 ) : (
+                    <ul className="flex flex-col h-[280px] overflow-y-auto px-5 py-3">
+                       {stats.recent_activity.map(act => (
+                          <li key={act.id} className="py-2.5 border-b border-slate-100 last:border-0">
+                             <div className="flex items-center gap-2 mb-1">
+                               <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] shadow-[0_0_8px_#10b981]" />
+                               <span className="text-[11px] text-slate-400 font-medium">Just now</span>
+                             </div>
+                             <p className="text-[13px] text-slate-600 line-clamp-2">
+                               New response securely captured internally on <strong>{act.survey_title}</strong>.
+                             </p>
+                          </li>
+                       ))}
+                    </ul>
+                 )}
+               </div>
             </div>
           </Reveal>
         </div>
 
-        {/* ── Survey list + Top surveys ── */}
+        {/* ── Survey list + Pie breakdown ── */}
         <div className="mb-6 grid grid-cols-1 gap-5 lg:grid-cols-3">
           <Reveal delay={100} className="lg:col-span-2">
             <div className={styles.panel}>
@@ -375,67 +357,53 @@ export default function DashboardPage() {
             <div className={styles.panel}>
               <div className={styles.panelHead}>
                 <div>
-                  <span className={styles.panelTitle}>Top Surveys</span>
-                  <p className={styles.panelSub}>Most answered surveys</p>
+                  <span className={styles.panelTitle}>Survey Status</span>
+                  <p className={styles.panelSub}>Live vs Draft breakdown</p>
                 </div>
               </div>
               <div className={styles.panelBody}>
-                {surveys.filter(s => s.response_count > 0).length === 0 ? (
-                  <div className={styles.empty}>
-                    <MessageSquare size={32} className="text-slate-200 mb-1" />
-                    <p className="font-medium text-slate-500 text-sm">No answers yet</p>
-                    <p className="text-xs text-slate-400 text-center max-w-[180px]">
-                      Share your live survey link to start collecting answers.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-4">
-                    {surveys.filter(s => s.response_count > 0).slice(0, 4).map((s) => {
-                      const max = Math.max(...surveys.map(x => x.response_count));
-                      const pct = max > 0 ? (s.response_count / max) * 100 : 0;
-                      return (
-                        <div key={s.id}>
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className="text-[12px] font-semibold text-slate-700 truncate max-w-[150px]">{s.title}</span>
-                            <span className="text-[12px] font-bold text-[#0d9488] ml-2 shrink-0">{s.response_count}</span>
+                {stats && stats.total_surveys > 0 ? (
+                  <>
+                    <ResponsiveContainer width="100%" height={150}>
+                      <PieChart>
+                        <Pie
+                          data={pieData}
+                          cx="50%" cy="50%"
+                          innerRadius={44} outerRadius={64}
+                          paddingAngle={3} dataKey="value"
+                          strokeWidth={0}
+                        >
+                          {pieData.map((e, i) => <Cell key={i} fill={e.color} />)}
+                        </Pie>
+                        <ReTooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: "1px solid #e2e8f0" }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="flex flex-col gap-2.5 mt-2">
+                      {pieData.map((d) => (
+                        <div key={d.name} className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className={styles.dot} style={{ background: d.color }} />
+                            <span className="text-[12px] text-slate-600">{d.name}</span>
                           </div>
-                          <div className={styles.bar}>
-                            <div className={styles.barFill} style={{ width: `${pct}%` }} />
-                          </div>
+                          <span className="text-[13px] font-bold text-slate-800">{d.value}</span>
                         </div>
-                      );
-                    })}
-                    <p className="text-[11px] text-slate-400 pt-2 border-t border-slate-100">
-                      {stats?.total_responses ?? 0} total responses across all surveys
-                    </p>
+                      ))}
+                      <div className="border-t border-slate-100 pt-2 flex justify-between">
+                        <span className="text-[11px] text-slate-400">Total surveys</span>
+                        <span className="text-[13px] font-bold text-slate-800">{stats.total_surveys}</span>
+                      </div>
+                    </div>
+                  </>
+                ) : (
+                  <div className={styles.empty}>
+                    <Users size={32} className="text-slate-200 mb-1" />
+                    <p className="font-medium text-slate-500 text-sm">No surveys yet</p>
                   </div>
                 )}
               </div>
             </div>
           </Reveal>
         </div>
-
-        {/* ── Tips ── */}
-        <Reveal delay={180}>
-          <div className={styles.tipsWrap}>
-            <p className={styles.tipsHeading}>💡 Grow your response rate</p>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              {[
-                { icon: "💬", title: "Treat it like a conversation", desc: "Don't sound like a robot. Write questions like you're actually talking to your customer." },
-                { icon: "⏱️", title: "Keep it under 3 mins", desc: "Your customers are busy. We found 3-5 questions is the golden rule for high completion rates." },
-                { icon: "🎁", title: "Show you care", desc: "Respond to negative feedback instantly. They will respect you for listening to them." },
-              ].map((t) => (
-                <div key={t.title} className={styles.tipCard}>
-                  <span className="text-xl shrink-0">{t.icon}</span>
-                  <div>
-                    <p className="text-[13px] font-bold text-slate-800 mb-0.5">{t.title}</p>
-                    <p className="text-[12px] text-slate-500 leading-relaxed">{t.desc}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </Reveal>
 
       </main>
     </div>
