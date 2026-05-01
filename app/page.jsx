@@ -393,21 +393,7 @@ function CTA() {
   );
 }
 
-function Footer() {
-  return (
-    <footer className="bg-slate-50 py-12 border-t border-slate-200">
-      <div className="mx-auto max-w-7xl px-6 lg:px-8 flex flex-col md:flex-row items-center justify-between gap-6">
-        <div className="flex items-center gap-2">
-          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-[#0d9488]">
-            <MessageCircle className="h-3 w-3 text-white" />
-          </div>
-          <span className="text-lg font-black text-slate-900">Lumino.</span>
-        </div>
-        <p className="text-sm text-slate-500">© {new Date().getFullYear()} Lumino Platform. All rights reserved.</p>
-      </div>
-    </footer>
-  );
-}
+import { Footer } from "@/components/dashboard/footer";
 
 export default function LandingPage() {
   return (

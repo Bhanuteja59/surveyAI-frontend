@@ -20,6 +20,8 @@ export default function RegisterPage() {
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [step, setStep] = useState(1); // 1: Register, 2: OTP
+  const [otp, setOtp] = useState("");
 
   function handleTenantName(value) {
     const slug = value.toLowerCase().replace(/\s+/g, "-").replace(/[^a-z0-9-]/g, "");
@@ -31,11 +33,25 @@ export default function RegisterPage() {
     setError("");
     setLoading(true);
     try {
-      const data = await authApi.register(form);
+      await authApi.register(form);
+      setStep(2);
+    } catch (err) {
+      setError(err.message || "Registration failed. Please try again.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleVerifyOtp(e) {
+    e.preventDefault();
+    setError("");
+    setLoading(true);
+    try {
+      const data = await authApi.verifyOtp({ email: form.email, otp });
       saveAuth(data.access_token, data.user);
       router.push("/dashboard");
     } catch (err) {
-      setError(err.message || "Registration failed. Please try again.");
+      setError(err.message || "OTP verification failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -108,9 +124,13 @@ export default function RegisterPage() {
           </div>
 
           <div className="mb-7">
-            <h1 className="text-2xl font-bold text-slate-900">Create your account</h1>
+            <h1 className="text-2xl font-bold text-slate-900">
+              {step === 1 ? "Create your account" : "Verify your email"}
+            </h1>
             <p className="mt-1.5 text-sm text-slate-500">
-              Set up your workspace and start collecting responses today.
+              {step === 1 
+                ? "Set up your workspace and start collecting responses today."
+                : `We've sent a 6-digit code to ${form.email}.`}
             </p>
           </div>
 
@@ -120,62 +140,89 @@ export default function RegisterPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <Input
-              label="Your full name"
-              value={form.full_name}
-              onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-              placeholder="Jane Smith"
-              required
-            />
-            <Input
-              label="Company / Organisation"
-              value={form.tenant_name}
-              onChange={(e) => handleTenantName(e.target.value)}
-              placeholder="Acme Corp"
-              required
-            />
-            <div>
+          {step === 1 ? (
+            <form onSubmit={handleSubmit} className="space-y-4">
               <Input
-                label="Workspace URL"
-                value={form.tenant_slug}
-                onChange={(e) =>
-                  setForm({
-                    ...form,
-                    tenant_slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""),
-                  })
-                }
-                placeholder="acme-corp"
+                label="Your full name"
+                value={form.full_name}
+                onChange={(e) => setForm({ ...form, full_name: e.target.value })}
+                placeholder="Jane Smith"
                 required
               />
-              {form.tenant_slug && (
-                <p className="mt-1 text-[11px] text-slate-400">
-                  app.lumino.com/{form.tenant_slug}
-                </p>
-              )}
-            </div>
-            <Input
-              label="Work email"
-              type="email"
-              value={form.email}
-              onChange={(e) => setForm({ ...form, email: e.target.value })}
-              placeholder="you@company.com"
-              required
-            />
-            <Input
-              label="Password"
-              type="password"
-              value={form.password}
-              onChange={(e) => setForm({ ...form, password: e.target.value })}
-              placeholder="Minimum 8 characters"
-              required
-              minLength={8}
-            />
+              <Input
+                label="Company / Organisation"
+                value={form.tenant_name}
+                onChange={(e) => handleTenantName(e.target.value)}
+                placeholder="Acme Corp"
+                required
+              />
+              <div>
+                <Input
+                  label="Workspace URL"
+                  value={form.tenant_slug}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      tenant_slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ""),
+                    })
+                  }
+                  placeholder="acme-corp"
+                  required
+                />
+                {form.tenant_slug && (
+                  <p className="mt-1 text-[11px] text-slate-400">
+                    app.lumino.com/{form.tenant_slug}
+                  </p>
+                )}
+              </div>
+              <Input
+                label="Work email"
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                placeholder="you@company.com"
+                required
+              />
+              <Input
+                label="Password"
+                type="password"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                placeholder="Minimum 8 characters"
+                required
+                minLength={8}
+              />
 
-            <Button type="submit" className="mt-1 w-full" loading={loading}>
-              Create account — it&apos;s free
-            </Button>
-          </form>
+              <Button type="submit" className="mt-1 w-full" loading={loading}>
+                Create account — it&apos;s free
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={handleVerifyOtp} className="space-y-4">
+              <Input
+                label="Verification Code"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/[^0-9]/g, ""))}
+                placeholder="000000"
+                required
+                maxLength={6}
+                minLength={6}
+                className="text-center text-2xl tracking-[10px] font-bold"
+              />
+              
+              <Button type="submit" className="mt-1 w-full" loading={loading}>
+                Verify & Continue
+              </Button>
+
+              <button
+                type="button"
+                onClick={() => setStep(1)}
+                className="w-full text-xs text-slate-500 hover:text-slate-800 transition-colors"
+              >
+                Change email or correction? Go back
+              </button>
+            </form>
+          )}
 
           <p className="mt-5 text-center text-sm text-slate-500">
             Already have an account?{" "}

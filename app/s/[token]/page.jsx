@@ -40,8 +40,21 @@ export default function PublicSurveyPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errors, setErrors] = useState({});
+  const [hasStarted, setHasStarted] = useState(false);
+  const [isPreFilled, setIsPreFilled] = useState(false);
 
   useEffect(() => {
+    // Secure level: Check if already completed to prevent duplicate filling UI
+    if (typeof window !== "undefined") {
+      const hasCompleted = localStorage.getItem(`survey_completed_${token}`);
+      if (hasCompleted) {
+        setSubmitted(true);
+        setIsPreFilled(true);
+        setLoading(false);
+        return;
+      }
+    }
+
     surveysApi
       .getPublic(token)
       .then((data) => setSurvey(data))
@@ -81,9 +94,20 @@ export default function PublicSurveyPage() {
         })),
       };
       await import("@/lib/api").then(({ responsesApi }) => responsesApi.submit(token, payload));
+      if (typeof window !== "undefined") {
+        localStorage.setItem(`survey_completed_${token}`, "true");
+      }
       setSubmitted(true);
     } catch (err) {
-      setErrors({ _submit: err.message || "Failed to submit. Please try again." });
+      if (err.status === 409 || (err.message && err.message.toLowerCase().includes("already completed"))) {
+        if (typeof window !== "undefined") {
+          localStorage.setItem(`survey_completed_${token}`, "true");
+        }
+        setIsPreFilled(true);
+        setSubmitted(true);
+      } else {
+        setErrors({ _submit: err.message || "Failed to submit. Please try again." });
+      }
     } finally {
       setSubmitting(false);
     }
@@ -118,22 +142,80 @@ export default function PublicSurveyPage() {
 
   if (submitted) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4 text-center">
-        <FadeIn>
+      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4 text-center relative overflow-hidden">
+        {/* Floating party elements */}
+        <div className="absolute top-[15%] left-[10%] text-4xl animate-float-slow opacity-80">🎉</div>
+        <div className="absolute top-[25%] right-[15%] text-5xl animate-float opacity-80">🥳</div>
+        <div className="absolute bottom-[20%] left-[20%] text-3xl animate-float-delay opacity-80">✨</div>
+        <div className="absolute bottom-[30%] right-[10%] text-4xl animate-float opacity-80">🎊</div>
+        <div className="absolute top-[5%] left-[50%] text-2xl animate-float-slow opacity-60">💖</div>
+        
+        <FadeIn className="relative z-10 bg-white p-10 rounded-3xl shadow-xl max-w-md w-full border border-slate-100">
           <div
-            className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full shadow-lg"
+            className="mx-auto mb-6 flex h-24 w-24 items-center justify-center rounded-full shadow-[0_0_40px_rgba(16,185,129,0.3)] transition-transform hover:scale-110 duration-500"
             style={{ background: "linear-gradient(135deg, #10b981, #34d399)" }}
           >
-            <CheckCircle2 className="h-8 w-8 text-white" />
+            <CheckCircle2 className="h-12 w-12 text-white" />
           </div>
-          <h1 className="mb-2 text-xl font-bold text-slate-900">Thank you!</h1>
-          <p className="max-w-sm text-sm text-slate-500">
-            Your response has been recorded. We appreciate you taking the time to share your feedback.
+          <h1 className="mb-3 text-3xl font-extrabold text-slate-900">
+            {isPreFilled ? "Welcome Back!" : "You're Awesome!"}
+          </h1>
+          <p className="max-w-sm mx-auto text-[15px] leading-relaxed text-slate-500">
+            {isPreFilled 
+              ? "It looks like you've already shared your feedback for this survey. We really appreciate your earlier contribution!" 
+              : "Your response has been safely recorded. Thank you so much for taking the time to share your thoughts with us today."
+            }
           </p>
-          <div className="mt-10 flex items-center justify-center gap-1.5 text-xs text-slate-400">
-            <div
-              className="flex h-4 w-4 items-center justify-center rounded bg-[#0d9488]"
-            >
+          <div className="mt-10 flex items-center justify-center gap-1.5 text-xs text-slate-400 font-semibold tracking-wide uppercase">
+            <div className="flex h-5 w-5 items-center justify-center rounded bg-[#0d9488]">
+              <MessageCircle className="h-3 w-3 text-white" />
+            </div>
+            Powered by Lumino
+          </div>
+        </FadeIn>
+      </div>
+    );
+  }
+
+  if (!hasStarted && survey) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
+        <FadeIn className="w-full max-w-md">
+          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
+            {/* Header / Cover */}
+            <div className="px-8 py-12 text-center text-white relative animate-gradient-x overflow-hidden" style={{ background: "linear-gradient(-45deg, #0d9488, #3b82f6, #8b5cf6, #14b8a6)", backgroundSize: "400% 400%" }}>
+              {/* Floating Emojis */}
+              <div className="absolute top-4 left-6 text-3xl animate-float-slow opacity-90 cursor-default">✨</div>
+              <div className="absolute bottom-6 right-8 text-4xl animate-float opacity-80 cursor-default">📝</div>
+              <div className="absolute top-10 right-6 text-2xl animate-float-delay opacity-70 cursor-default">💡</div>
+              <div className="absolute bottom-4 left-8 text-2xl animate-float-slow opacity-70 cursor-default">🚀</div>
+
+              <div className="mx-auto mb-6 flex h-[72px] w-[72px] items-center justify-center rounded-3xl bg-white/20 backdrop-blur-md shadow-lg relative z-10 transition-transform hover:scale-110 duration-500">
+                <span className="text-4xl animate-waving-hand inline-block origin-[70%_70%]">👋</span>
+              </div>
+              <h1 className="text-[26px] font-extrabold relative z-10 leading-tight">{survey.title}</h1>
+              {survey.description && (
+                <p className="mt-4 text-[15px] font-medium text-white/90 relative z-10 max-w-sm mx-auto">{survey.description}</p>
+              )}
+            </div>
+            
+            {/* Action Area */}
+            <div className="p-8 text-center bg-white">
+              <p className="mb-8 text-[15px] leading-relaxed text-slate-500">
+                It only takes a few minutes to complete this survey. We highly appreciate your feedback!
+              </p>
+              <Button 
+                onClick={() => setHasStarted(true)} 
+                size="lg" 
+                className="w-full h-14 rounded-xl bg-slate-900 text-[15px] font-bold text-white shadow hover:bg-slate-800 transition-all active:scale-[0.98]"
+              >
+                Start Survey
+              </Button>
+            </div>
+          </div>
+
+          <div className="mt-8 flex items-center justify-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-slate-400">
+            <div className="flex h-4 w-4 items-center justify-center rounded bg-[#0d9488]">
               <MessageCircle className="h-2.5 w-2.5 text-white" />
             </div>
             Powered by Lumino
