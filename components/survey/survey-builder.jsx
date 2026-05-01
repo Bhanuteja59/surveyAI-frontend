@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Textarea } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { AIGenerator } from "./ai-generator";
 
 const QUESTION_TYPES = [
   { value: "multiple_choice", label: "Multiple Choice" },
@@ -115,6 +116,45 @@ export function SurveyBuilder({ initialTitle = "", initialDescription = "", init
     return Object.keys(errs).length === 0;
   }
 
+  function handleAIStart() {
+    setTitle("");
+    setDescription("");
+    // Clear out the starting blank question so it can fill smoothly
+    setQuestions([]);
+    setErrors({});
+  }
+
+  function handleAIMeta(newTitle, newDesc) {
+    if (newTitle) setTitle(newTitle);
+    if (newDesc) setDescription(newDesc);
+  }
+
+  function handleAIQuestion(q) {
+    if (!q.text) return; // Ignore malformed questions
+    setQuestions((prev) => [
+      ...prev,
+      {
+        key: `ai-q-${Date.now()}-${prev.length}`,
+        text: q.text,
+        question_type: q.question_type || "multiple_choice",
+        options: q.options || { choices: ["Option 1", "Option 2"] },
+        is_required: q.is_required !== false,
+        order_index: prev.length,
+        tenant_id: 0,
+      },
+    ]);
+  }
+
+  function handleAIDone() {
+    // If it errored out totally or returned 0 questions, give them at least one blank slot
+    setQuestions((prev) => (prev.length === 0 ? [newQuestion(0)] : prev));
+  }
+
+  function handleAIError(msg) {
+    console.error("AI Error:", msg);
+    setErrors({ fetch: msg });
+  }
+
   function handleSubmit(_publish) {
     if (!validate()) return;
     const qs = questions.map(({ key, ...rest }) => rest);
@@ -123,6 +163,14 @@ export function SurveyBuilder({ initialTitle = "", initialDescription = "", init
 
   return (
     <div className="space-y-6">
+      <AIGenerator 
+        onStart={handleAIStart}
+        onMeta={handleAIMeta}
+        onQuestion={handleAIQuestion}
+        onDone={handleAIDone}
+        onError={handleAIError}
+      />
+      
       {/* Survey meta */}
       <Card>
         <CardHeader>

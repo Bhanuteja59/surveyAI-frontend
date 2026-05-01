@@ -6,27 +6,33 @@ import { getStoredUser, clearAuth } from "@/lib/auth";
 import styles from "./profile-dropdown.module.css";
 
 function initials(name) {
+  if (!name) return "??";
   return name
     .split(" ")
     .filter(Boolean)
     .slice(0, 2)
-    .map((w) => w[0].toUpperCase())
+    .map((w) => w[0]?.toUpperCase() || "")
     .join("");
 }
 
 export function ProfileDropdown() {
   const router = useRouter();
-  const stored = getStoredUser();
-
   const [open, setOpen] = useState(false);
-  const [user, setUser] = useState(
-    stored ?? { id: 0, email: "", full_name: "User", role: "admin", tenant_id: 0, tenant_name: "" }
-  );
-  const [name, setName]     = useState(user.full_name);
-  const [email, setEmail]   = useState(user.email);
+  const [user, setUser] = useState({ id: 0, email: "", full_name: "User", role: "admin", tenant_id: 0, tenant_name: "" });
+  const [name, setName]     = useState("");
+  const [email, setEmail]   = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved]   = useState(false);
   const [dirty, setDirty]   = useState(false);
+
+  useEffect(() => {
+    const stored = getStoredUser();
+    if (stored) {
+      setUser(stored);
+      setName(stored.full_name);
+      setEmail(stored.email);
+    }
+  }, []);
 
   const wrapRef = useRef(null);
 

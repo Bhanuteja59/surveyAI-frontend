@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { Navbar } from "@/components/dashboard/navbar";
@@ -12,6 +12,22 @@ export default function NewSurveyPage() {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [draft, setDraft] = useState(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const saved = sessionStorage.getItem("ai_survey_draft");
+      if (saved) {
+        try {
+          setDraft(JSON.parse(saved));
+          // Clear it so it doesn't persist forever
+          sessionStorage.removeItem("ai_survey_draft");
+        } catch (e) {}
+      }
+      setReady(true);
+    }
+  }, []);
 
   async function handleSave(title, description, questions) {
     setSaving(true);
@@ -40,9 +56,17 @@ export default function NewSurveyPage() {
             {error}
           </div>
         )}
-        <FadeIn delay={80}>
-          <SurveyBuilder onSave={handleSave} saving={saving} />
-        </FadeIn>
+        {ready && (
+          <FadeIn delay={80}>
+            <SurveyBuilder 
+              initialTitle={draft?.title || ""}
+              initialDescription={draft?.description || ""}
+              initialQuestions={draft?.questions || []}
+              onSave={handleSave} 
+              saving={saving} 
+            />
+          </FadeIn>
+        )}
       </main>
     </div>
   );
